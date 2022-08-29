@@ -1,0 +1,76 @@
+import pandas as pd
+import numpy as np
+import re
+dfnew= pd.read_csv(r"C:\\Users\\pjoshi\\Documents\\problem_records.csv",
+                encoding='cp437')
+dfsorted= dfnew[(dfnew.ST_DESC == "Closed")]
+df=dfsorted
+df=df.drop_duplicates(subset=['PBLM_NBR','PBLM_DESC','ROOT_CAUSE_TXT','FIX_NT_TXT','CAUSE_NT_TXT'])
+
+#df= df.replace(np.nan, '', regex=True)
+df['mergedprob'] =df[['PBLM_DESC', 'ROOT_CAUSE_TXT', 'FIX_NT_TXT',
+  'CAUSE_NT_TXT']].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
+
+
+
+df['mergedprob']=df['mergedprob'].replace('nan', '  ', regex=True)
+df['cleaned_mergedprob'] = df['mergedprob'].replace('_', '  ', regex=True)
+df['cleaned_mergedprob']=df['cleaned_mergedprob'].apply(str.strip)
+
+def preprocess(text, remove_digits=False):
+    pattern = r'[^a-zA-Z0-9\s]' if not remove_digits else r'[^a-zA-Z\s]'
+    text = re.sub(pattern, ' ', text)
+    text = re.sub(r'\s+[a-zA-Z]\s+', ' ', text) # remove all single characters
+    text = re.sub(r'\^[a-zA-Z]\s+', ' ', text)  # Remove single characters from the start
+    text = re.sub(r'\s+', ' ', text, flags=re.I) # Substituting multiple spaces with single space
+    return text
+
+df['cleaned_mergedprob'] = df['cleaned_mergedprob'].apply(preprocess)
+
+#remove na
+df = df[df['cleaned_mergedprob'] != '']
+
+import pandas as pd
+import faiss
+import time
+from sentence_transformers import SentenceTransformer
+
+model3=SentenceTransformer('msmarco-distilbert-base-dot-prod-v3')
+
+data=df.cleaned_mergedprob.to_list()
+
+
+s=time.time()
+encoded_data3 = model3.encode(data)
+print(time.time() - s)
+##################################################
+query='Client mobile is down'
+encoded_datasample = model3.encode(query)
+#Defining an index
+import faiss
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+index = faiss.IndexIDMap(faiss.IndexFlatIP(768)) #faiss assures faster similarity search
+#to avoid the default assignment of iD's to vectors we use IndexIDMap
+#we store ourvectors in faiss and query our new faiss index using a 'query' vector. 
+ids = np.array(range(0, len(data)))
+ids = np.asarray(ids.astype('int64'))
+index.add_with_ids(encoded_data3, ids)
+
+#calculating pairwise similarities
+sim= (pd.DataFrame(cosine_similarity(
+    [encoded_datasample],
+    encoded_data3[0:]
+))).T
+sim.rename( columns={0:'similarity'}, inplace=True )
+sim
+
+dfnew= df[['PBLM_NBR','ASGN_GRP_NM','SHRT_DESC','PBLM_DESC','ROOT_CAUSE_TXT','FIX_NT_TXT','CAUSE_NT_TXT','mergedprob']]
+dfnew=dfnew.reset_index()
+dfnew["sim"]=sim["similarity"]
+dfnew["query"]= query
+test = dfnew[['SHRT_DESC','PBLM_NBR','mergedprob', 'query', 'sim']].sort_values(by=["sim"],ascending=False)
+#pd.set_option('display.max_colwidth' , 350)
+
+test[test['mergedprob'].str.contains("BrokerageFinancialTransactionSets",na=False)]
+
