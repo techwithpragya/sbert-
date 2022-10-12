@@ -1,21 +1,85 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# ## S-Bert framework
+# by Pragya Joshi
+# 
+
+# ##### Import Libraries
+
+# In[1]:
+
+
 import pandas as pd
 import numpy as np
 import re
-dfnew= pd.read_csv(r"C:\\Users\\pjoshi\\Documents\\problem_records.csv",
-                encoding='cp437')
-dfsorted= dfnew[(dfnew.ST_DESC == "Closed")]
-df=dfsorted
-df=df.drop_duplicates(subset=['PBLM_NBR','PBLM_DESC','ROOT_CAUSE_TXT','FIX_NT_TXT','CAUSE_NT_TXT'])
+import pyodbc
+import pandas as pd
+import faiss
+import time
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+import pickle
 
-#df= df.replace(np.nan, '', regex=True)
-df['mergedprob'] =df[['PBLM_DESC', 'ROOT_CAUSE_TXT', 'FIX_NT_TXT',
+from sklearn.manifold import TSNE
+import plotly.express as px
+import plotly.io as pio
+
+
+# ##### Establishing connection to warehouse
+
+# In[2]:
+
+
+conn=pyodbc.connect(
+    Trusted_Connection='Yes',
+    Driver='{SQL Server}',
+    Server='E3-TechTran.ampf.com, 43314;',
+    Database='TI_DWH')
+
+conn_str = (r'Driver={SQL Server};'r'Server=E3-TechTran.ampf.com, 43314;'r'Database=TI_DWH;'r'Trusted_Connection=yes;')
+cnxn = pyodbc.connect(conn_str) 
+cursor = conn.cursor() #initialising cursor
+
+
+# ##### Reading data using sql query
+
+# In[7]:
+
+
+df = pd.read_sql("SELECT * FROM MSTR.OPS_PBLM where OPEN_AT_DT >= DATEADD(day,-7, GETDATE())", cnxn)
+
+
+# In[14]:
+
+
+pd.set_option('display.max_colwidth' , 350)
+df
+
+
+# ##### Filtering data and Merging columns
+
+# In[9]:
+
+
+dfclosed= df[(df.ST_DESC == "Closed")]
+
+dfclosed=dfclosed.drop_duplicates(subset=['PBLM_NBR','PBLM_DESC','ROOT_CAUSE_TXT','FIX_NT_TXT','CAUSE_NT_TXT'])
+
+
+dfclosed['mergedprob'] =dfclosed[['PBLM_DESC', 'ROOT_CAUSE_TXT', 'FIX_NT_TXT',
   'CAUSE_NT_TXT']].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
 
+dfclosed['mergedprob']=dfclosed['mergedprob'].replace('nan', '  ', regex=True)
+dfclosed['cleaned_mergedprob'] = dfclosed['mergedprob'].replace('_', '  ', regex=True)
+dfclosed['cleaned_mergedprob']=dfclosed['cleaned_mergedprob'].apply(str.strip)
+dfclosed
 
 
-df['mergedprob']=df['mergedprob'].replace('nan', '  ', regex=True)
-df['cleaned_mergedprob'] = df['mergedprob'].replace('_', '  ', regex=True)
-df['cleaned_mergedprob']=df['cleaned_mergedprob'].apply(str.strip)
+# ##### Text Preprocessing
+
+# In[10]:
+
 
 def preprocess(text, remove_digits=False):
     pattern = r'[^a-zA-Z0-9\s]' if not remove_digits else r'[^a-zA-Z\s]'
@@ -25,52 +89,68 @@ def preprocess(text, remove_digits=False):
     text = re.sub(r'\s+', ' ', text, flags=re.I) # Substituting multiple spaces with single space
     return text
 
-df['cleaned_mergedprob'] = df['cleaned_mergedprob'].apply(preprocess)
-
-#remove na
-df = df[df['cleaned_mergedprob'] != '']
-
-import pandas as pd
-import faiss
-import time
-from sentence_transformers import SentenceTransformer
-
-model3=SentenceTransformer('msmarco-distilbert-base-dot-prod-v3')
-
-data=df.cleaned_mergedprob.to_list()
+dfclosed['cleaned_mergedprob'] = dfclosed['cleaned_mergedprob'].apply(preprocess)
+dfclosed = dfclosed[dfclosed['cleaned_mergedprob'] != '']
 
 
-s=time.time()
+# ##### Loading the Model and applying new data
+
+# In[11]:
+
+
+model3 = SentenceTransformer('msmarco-distilbert-dot-v5')
+data = dfclosed.cleaned_mergedprob.to_list()
+s = time.time()
 encoded_data3 = model3.encode(data)
 print(time.time() - s)
-##################################################
-query='Client mobile is down'
-encoded_datasample = model3.encode(query)
-#Defining an index
-import faiss
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
+
+
+# ##### Reading the old model embeddings 
+# ##### Concatenating old and new embeddings
+# ##### Dumping the contenated embeddings to the folder
+
+# In[12]:
+
+
+infile = open("C://Users//pjoshi2//problemrecordencodings.pickle",'rb')
+encoded_dataold= pickle.load(infile)
+
+encoded_data = np.concatenate([encoded_dataold,encoded_data3])
+
+with open('problemrecordsembedding.pickle', 'wb') as pkl:
+    pickle.dump(encoded_data, pkl)
+
+
+# ### Query Testing
+
+# In[16]:
+
+
 index = faiss.IndexIDMap(faiss.IndexFlatIP(768)) #faiss assures faster similarity search
 #to avoid the default assignment of iD's to vectors we use IndexIDMap
 #we store ourvectors in faiss and query our new faiss index using a 'query' vector. 
-ids = np.array(range(0, len(data)))
+ids = np.array(range(0, len(encoded_data)))
 ids = np.asarray(ids.astype('int64'))
-index.add_with_ids(encoded_data3, ids)
+index.add_with_ids(encoded_data, ids)
+pd.set_option('display.max_colwidth' , 350)
+def search(query):
+   t=time.time()
+   query_vector = model3.encode(query)
+   sim = (pd.DataFrame(cosine_similarity([query_vector],encoded_data))).T
+   sim.rename( columns={0:'similarity'}, inplace=True )
+   dfnew= dfclosed[['PBLM_NBR','ASGN_GRP_NM','SHRT_DESC','PBLM_DESC','ROOT_CAUSE_TXT','FIX_NT_TXT','CAUSE_NT_TXT','mergedprob']]
+   dfnew=dfnew.reset_index()
+   dfnew["sim"]=sim["similarity"]
+   dfnew["query"]= query
+   test = dfnew[['SHRT_DESC','PBLM_NBR','ROOT_CAUSE_TXT','FIX_NT_TXT','CAUSE_NT_TXT','mergedprob', 'query', 'sim']].sort_values(by=["sim"],ascending=False)
+   return test
+                        
+query= str(input())
+search(query)
 
-#calculating pairwise similarities
-sim= (pd.DataFrame(cosine_similarity(
-    [encoded_datasample],
-    encoded_data3[0:]
-))).T
-sim.rename( columns={0:'similarity'}, inplace=True )
-sim
 
-dfnew= df[['PBLM_NBR','ASGN_GRP_NM','SHRT_DESC','PBLM_DESC','ROOT_CAUSE_TXT','FIX_NT_TXT','CAUSE_NT_TXT','mergedprob']]
-dfnew=dfnew.reset_index()
-dfnew["sim"]=sim["similarity"]
-dfnew["query"]= query
-test = dfnew[['SHRT_DESC','PBLM_NBR','mergedprob', 'query', 'sim']].sort_values(by=["sim"],ascending=False)
-#pd.set_option('display.max_colwidth' , 350)
+# In[17]:
 
-test[test['mergedprob'].str.contains("BrokerageFinancialTransactionSets",na=False)]
+
+pip freeze requirement.txt
 
