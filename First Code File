@@ -34,10 +34,10 @@ import plotly.io as pio
 conn=pyodbc.connect(
     Trusted_Connection='Yes',
     Driver='{SQL Server}',
-    Server='E3-TechTran.ampf.com, 43314;',
-    Database='TI_DWH')
+    Server='servername.xyz.com, 43314;',
+    Database='databasename')
 
-conn_str = (r'Driver={SQL Server};'r'Server=E3-TechTran.ampf.com, 43314;'r'Database=TI_DWH;'r'Trusted_Connection=yes;')
+conn_str = (r'Driver={SQL Server};'r'Server=servername.xyz.com, 43314;'r'Database=databasename;'r'Trusted_Connection=yes;')
 cnxn = pyodbc.connect(conn_str) 
 cursor = conn.cursor() #initialising cursor
 
@@ -112,7 +112,7 @@ print(time.time() - s)
 # In[12]:
 
 
-infile = open("C://Users//pjoshi2//problemrecordencodings.pickle",'rb')
+infile = open("C://Users//pragya//problemrecordencodings.pickle",'rb')
 encoded_dataold= pickle.load(infile)
 
 encoded_data = np.concatenate([encoded_dataold,encoded_data3])
