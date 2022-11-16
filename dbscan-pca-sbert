@@ -1,0 +1,430 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[7]:
+
+
+import pandas as pd
+import numpy as np
+from pandasql import sqldf
+mysql = lambda q : sqldf(q , globals())
+import matplotlib.pyplot as plt
+import seaborn as sns
+import contractions
+from sklearn import metrics
+from sklearn.decomposition import PCA
+import time
+import string
+import re
+# %matplotlib notebook
+
+plt.rcParams['figure.figsize'] = (34,10)
+
+pd.set_option('display.max_columns' , 150)
+pd.set_option('display.max_rows' , 500)
+pd.set_option('display.max_colwidth' , 350)
+
+import boto3
+import athenacredC1
+
+
+# In[8]:
+
+
+import pickle
+from sklearn.ensemble import AdaBoostClassifier
+from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import chi2
+from sklearn.feature_selection import f_classif
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.multiclass import OneVsOneClassifier
+from sklearn import preprocessing
+from sentence_transformers import SentenceTransformer
+sbert_model = SentenceTransformer('distilbert-base-uncased')
+#import catboost
+
+
+# In[3]:
+
+
+#dfs= pd.read_csv("AlertsData.csv")
+
+
+# In[8]:
+
+
+'''region = 'us-east-1'
+session = boto3.Session()
+client = boto3.client('athena', region_name = region, aws_access_key_id = athenacredC1.key_id,
+                aws_secret_access_key = athenacredC1.secret_access_key )
+s3_client = boto3.client('s3',region_name = region, aws_access_key_id = athenacredC1.key_id,
+                aws_secret_access_key = athenacredC1.secret_access_key)
+
+myschema = 'techdl_struct'
+myathenaresultsdirectory = 'location//directoryname'
+myathenaresultsbucket = 'directoryname'
+
+
+# In[12]:
+
+
+'''def athena_query(client):
+    
+    response = client.start_query_execution(
+        QueryString=myquery,
+        QueryExecutionContext={
+            'Database': myschema
+        },
+        ResultConfiguration={
+            'OutputLocation': myathenaresultsdirectory
+        },
+        WorkGroup='techdl_workgroup'
+    )
+    return response
+
+## Function to monitor the query execution status because the query is run asynchronously to generate the output in s3 bucket
+## Print the status or return the query results if successful
+
+def query_results(client):
+    ## Run the query
+    mydata_query = athena_query(client)
+    ## Start monitoring the status of your query
+    iterations = 1
+    max_iterations = 50 # used to stop execution if it takes too long - use your judgement!
+    while (iterations > 0):
+        response_get_query_details = client.get_query_execution(QueryExecutionId = mydata_query['QueryExecutionId'])
+        query_execution_status = response_get_query_details['QueryExecution']['Status']['State']
+        if query_execution_status == 'FAILED' or query_execution_status == 'CANCELLED':
+            print("Status:" + query_execution_status)
+            print("Detailed execution status: ")
+            print(response_get_query_details)
+            break
+        elif query_execution_status == 'SUCCEEDED':
+            print("Done! - Query successful.")
+            file_name = "{}.csv".format(mydata_query['QueryExecutionId'])
+            result_bucket = s3_client.get_object(Bucket=myathenaresultsbucket, Key = file_name )
+            mydata = pd.read_csv(result_bucket['Body'])
+            return mydata
+            break
+        else:
+            time.sleep(1)
+            print("Status:" + query_execution_status)
+            #print(response_get_query_details)
+            iterations = iterations + 1
+            ## print(response_get_query_details)
+            if iterations > max_iterations:
+                client.stop_query_execution(QueryExecutionId=queryExecId)
+                raise Exception('Query Execution timed out!') 
+                break  '''
+
+
+# In[40]:
+
+
+#myquery= "select additional_info,cmdb_ci,description,event_class,message_key,metric_name,processing_notes,source,sys_created_by,sys_created_on,sys_updated_by,sys_updated_on,severity,time_of_event,type from techdl_struct.view_curr_svcnow_merge_daily_service_mgmt_em_event where sys_created_on > '2022-07-01 00:00:00' and severity = 'Major'"
+
+
+# In[12]:
+
+
+df_major = pd.read_csv("C:\\Users\\pragya\\Downloads\\df_major.csv")
+df_warning = pd.read_csv("C:\\Users\\pragya\\Downloads\\df_warning.csv")
+df_critical= pd.read_csv("C:\\Users\\pragya\\Downloads\\df_critical.csv")
+
+
+# In[13]:
+
+
+df_all = pd.concat([df_major,df_warning,df_critical])
+
+
+# In[14]:
+
+
+df_all
+
+
+# In[15]:
+
+
+df_all.info()
+
+
+# In[16]:
+
+
+(df_all['severity']).value_counts()
+
+
+# In[17]:
+
+
+(df_all['source']).value_counts()
+
+
+# In[18]:
+
+
+(df_all['type']).value_counts()
+
+
+# In[19]:
+
+
+(df_all['cmdb_ci']).value_counts()
+
+
+# In[27]:
+
+
+#print(dfs['cmdb_ci'].nunique())
+
+
+# In[25]:
+
+
+#(dfs['state']).value_counts()
+
+
+# In[9]:
+
+
+from sklearn.cluster import DBSCAN
+
+
+# In[10]:
+
+
+#cluster_classification = DBSCAN(eps=2.7,algorithm='kd_tree', min_samples=1 ,n_jobs = -1)
+
+
+# In[21]:
+
+
+dfs = df_all.copy()
+#len(df['cmdb_ci'].unique()) # total 8059 different class.
+
+
+# In[22]:
+
+
+dfs.isnull().sum()
+
+
+# In[9]:
+
+
+#dfs[dfs['type'].str.contains("primary",na=False)]
+
+
+# In[23]:
+
+
+dfs['description'].dropna(inplace=True)
+
+
+# In[24]:
+
+
+df_all.reset_index
+df_all['short_description']=df_all['description'].astype(str)
+
+
+# In[25]:
+
+
+dfs=df_all
+
+
+# In[26]:
+
+
+dfs['short_description'] = dfs['short_description'].apply(contractions.fix)
+
+dfs['short_description'] = dfs['short_description'].apply(str.lower)
+dfs['short_description'] = dfs['short_description'].apply(str.strip)
+print(string.punctuation)
+
+def remove_special_characters(text, remove_digits=False):
+    pattern = r'[^a-zA-Z0-9\s]' if not remove_digits else r'[^a-zA-Z\s]'
+    text = re.sub(pattern, ' ', text)
+    return text
+dfs['short_description'] = dfs['short_description'].apply(remove_special_characters)
+
+
+# In[27]:
+
+
+def again_preprocess(text):
+    text = re.sub(r'\s+[a-zA-Z]\s+', ' ', text) # remove all single characters
+    text = re.sub(r'\^[a-zA-Z]\s+', ' ', text)  # Remove single characters from the start
+    text = re.sub(r'\s+', ' ', text, flags=re.I) # Substituting multiple spaces with single space
+    return text
+dfs['short_description'] = dfs['short_description'].apply(again_preprocess)
+
+
+# In[28]:
+
+
+x = dfs['short_description'].to_list()
+
+
+# ### Building Model
+
+# In[31]:
+
+
+s = time.time()
+sentence_embeddings_1 = sbert_model.encode(x[:20000])
+print(sentence_embeddings_1.shape)
+print(time.time() - s)
+
+
+# In[32]:
+
+
+s = time.time()
+sentence_embeddings_2alerts = sbert_model.encode(x[20000:50000])
+print(sentence_embeddings_2alerts.shape)
+print(time.time() - s)
+
+
+# In[ ]:
+
+
+s = time.time()
+sentence_embeddings_3alerts = sbert_model.encode(x[50000:])
+print(sentence_embeddings_3alerts.shape)
+print(time.time() - s)
+
+with open('sentence_embeddings_1events.pickle', 'wb') as pkl:
+    pickle.dump(sentence_embeddings_1, pkl)with open('sentence_embeddings_2events.pickle', 'wb') as pkl:
+    pickle.dump(sentence_embeddings_2alerts, pkl)with open('sentence_embeddings_3events.pickle', 'wb') as pkl:
+    pickle.dump(sentence_embeddings_3alerts, pkl)
+
+
+# In[33]:
+
+
+#loading pickle files
+
+infile = open("C://Users//pragya//sentence_embeddings_1events.pickle",'rb')
+sentence_embeddings_1events = pickle.load(infile)
+
+infile = open("C://Users//pragya//sentence_embeddings_2events.pickle",'rb')
+sentence_embeddings_2events = pickle.load(infile)
+
+infile = open("C://Users//pragya//sentence_embeddings_3events.pickle",'rb')
+sentence_embeddings_3events = pickle.load(infile)
+
+
+# In[34]:
+
+
+Clusterdata1 = pd.DataFrame(sentence_embeddings_1events , columns = np.linspace(1 , 768 , num = 768))
+Clusterdata2 = pd.DataFrame(sentence_embeddings_2events , columns = np.linspace(1 , 768 , num = 768))
+Clusterdata3 = pd.DataFrame(sentence_embeddings_3events , columns = np.linspace(1 , 768 , num = 768))
+#Clusterdata4 = pd.DataFrame(sentence_embeddings_4alerts , columns = np.linspace(1 , 768 , num = 768))
+#Clusterdata5 = pd.DataFrame(sentence_embeddings_5alerts , columns = np.linspace(1 , 768 , num = 768))
+
+
+# In[35]:
+
+
+Clusterdata = pd.concat([Clusterdata1 , Clusterdata2 , Clusterdata3] , axis = 0)
+
+
+# In[36]:
+
+
+Clusterdata.reset_index( inplace = True , drop = True)
+dfs.reset_index(inplace = True , drop = True)
+df_bert_data = pd.concat([dfs , Clusterdata] , axis = 1)
+
+
+# In[37]:
+
+
+#Applying PCA to reduce dimensions
+pca_38 = PCA(n_components = .93  , random_state = 343)
+pca_38.fit(Clusterdata)
+x_pca_38 = pca_38.transform(Clusterdata)
+sum(pca_38.explained_variance_ratio_ * 100)
+x_pca_38.shape 
+
+
+# In[38]:
+
+
+df_75 = pd.DataFrame(x_pca_38, columns = np.linspace(1 , 34 , num = 34))
+
+
+# In[39]:
+
+
+df_75.reset_index( inplace = True , drop = True)
+dfs.reset_index(inplace = True , drop = True)
+
+
+# In[40]:
+
+
+df_pca = pd.concat([dfs , df_75] , axis = 1)
+
+
+# In[41]:
+
+
+from sklearn.cluster import DBSCAN
+
+
+# In[42]:
+
+
+df_pca
+
+
+# In[43]:
+
+
+df_pca.iloc[: , 17:]
+
+
+# In[45]:
+
+
+cluster_classification = DBSCAN(eps=0.5,algorithm='kd_tree', min_samples=35 ,n_jobs = -1)
+cluster_classification_selection = cluster_classification.fit(df_pca.iloc[: , 17:])
+
+
+# In[46]:
+
+
+df_pca
+
+
+# In[47]:
+
+
+df_withcluster= df_pca.iloc[: , :16] #filtered features
+df_withcluster.loc[:,'Cluster'] = cluster_classification_selection.labels_ #added cluster labels
+df_withcluster = df_withcluster[df_withcluster["Cluster"] != -1] #-1 are noisy points that should not be assigned to any cluster
+df_withcluster
+
+
+# In[20]:
+
+
+df_withclusterng = df_pca.iloc[: , :16] #filtered features
+df_withclusterng.loc[:,'Cluster'] = cluster_classification_selection.labels_ #added cluster labels
+df_withclusterng = df_withclusterng[df_withclusterng["Cluster"] == -1] 
+
+
+# In[48]:
+
+
+df_withcluster.to_csv("dataset_clusters.csv")
+
